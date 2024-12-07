@@ -149,15 +149,13 @@ kernel void update_accelerations_and_XSPH(device const simulation_uniforms &u [[
     particle->acceleration += u.gravity;
     
     if (u.isDragging && u.dragRadius > length(particle->position - u.dragCenter)) {
-        float dragDist = length(particle->position - u.dragCenter);
-        float2 dragDir = normalize(particle->position - u.dragCenter);
         
-        if (dragDist / u.dragRadius > 0.5) {
-            particle->acceleration -= 10 * dragDir * pow(dragDist / u.dragRadius, 2); // TODO: make drag strength configurable
+        
+        particle->acceleration -= u.dragStrength * (particle->position - u.dragCenter) / u.dragRadius;
+        
+        if (u.dragStrength >= 0) {
+            particle->acceleration -= u.gravity;
         }
-        
-        // nullify gravity
-        particle->acceleration -= u.gravity;
     }
 
     uint2 grid_index = getGridIndex(particle->position, u.kernelRadius);
@@ -194,3 +192,49 @@ kernel void update_accelerations_and_XSPH(device const simulation_uniforms &u [[
     }
 }
 
+
+// Courtesy of ChatGPT
+kernel void bitonic_sort_particles_by_hash(device const simulation_uniforms &u [[ buffer(0 )]],
+                                           device particle *particles [[ buffer(1) ]],
+                                           uint tid [[thread_position_in_grid]]) {
+    uint n = u.body_count;
+    
+    for (uint k = 2; k <= n; k <<= 1) {
+        for (uint j = k >> 1; j > 0; j >>= 1) {
+            uint ixj = tid ^ j;
+            if (ixj > tid && ixj < n && tid < n) {
+                bool ascending = ((tid & k) == 0);
+                if ((particles[tid].cellHash > particles[ixj].cellHash) == ascending) {
+                    particle tmp = particles[tid];
+                    particles[tid] = particles[ixj];
+                    particles[ixj] = tmp;
+                }
+            }
+            threadgroup_barrier(mem_flags::mem_device);
+        }
+    }
+}
+
+kernel void update_starts_buffer(device const simulation_uniforms &u [[ buffer(0)]],
+                                 device const particle *particles [[ buffer(1) ]],
+                                 device uint *cell_starts [[ buffer(2) ]],
+                                 uint tid [[ thread_position_in_grid ]]) {
+    if (tid >= u.body_count) { return; }
+    
+    // binary search for the start of the cell
+    uint hash = tid;
+    
+    uint start = 0;
+    uint end = u.body_count;
+    
+    while (start < end) {
+        uint mid = (start + end) / 2;
+        if (particles[mid].cellHash < hash) {
+            start = mid + 1;
+        } else {
+            end = mid;
+        }
+    }
+    
+    cell_starts[hash] = start;
+}

@@ -26,6 +26,7 @@ struct SimulationUniforms {
     var drag_center: simd_float2 = .init(0.5, 0.5)
     var is_dragging: simd_bool = false
     var drag_radius: simd_float1 = 0.1
+    var drag_strength: simd_float1 = 10
 }
 
 class Simulation: ObservableObject {
@@ -86,7 +87,7 @@ class Simulation: ObservableObject {
         }
     }
 
-    public var isRunning = true
+    public var isRunning = false
 
     @Published
     public var currentDeltaTime: Float = 0

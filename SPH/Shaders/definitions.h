@@ -34,6 +34,7 @@ struct simulation_uniforms {
     float2 dragCenter;
     bool isDragging;
     float dragRadius;
+    float dragStrength;
 };
 
 #endif /* definitions_h */

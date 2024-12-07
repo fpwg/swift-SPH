@@ -65,4 +65,14 @@ extension Simulation {
             uniforms.friction = simd_float1(newValue)
         }
     }
+    
+    var mousePushesParticles: Bool {
+        get {
+            return uniforms.drag_strength < 0
+        }
+        set {
+            guard newValue != mousePushesParticles else { return }
+            uniforms.drag_strength *= -1
+        }
+    }
 }
