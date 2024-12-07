@@ -10,6 +10,7 @@ import MetalKit
 import simd
 
 struct SimulationUniforms {
+    var step_size: Float = 0.01
     var body_count: simd_int1 = 500
     let wallCollisionDampening: Float = 0.9
     let kernelRadius: Float = 0.1
@@ -33,9 +34,19 @@ class Simulation {
 
     private var updateDensititesPipeline: MTLComputePipelineState!
     private var computeHashesPipeline: MTLComputePipelineState!
+    private var updateAccelerationsAndXSPHVelocitiesPipeline: MTLComputePipelineState!
+    private var performEulerIntegrationStepPipeline: MTLComputePipelineState!
 
-    private let CELL_OFFSETS: [(simd_int1, simd_int1)] =
-        [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 0), (0, 1), (1, -1), (1, 0), (1, 1)]
+    private var threadsPerThreadgroup: MTLSize {
+        MTLSize(width: 64, height: 1, depth: 1)
+    }
+
+    private var threadgroupsPerGrid: MTLSize {
+        MTLSize(
+            width: (particleCount + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width,
+            height: 1, depth: 1
+        )
+    }
 
     private var _particleCount: Int!
     public var particleCount: Int {
@@ -54,17 +65,7 @@ class Simulation {
 
     var uniforms = Uniforms()
 
-    private func kernel(_ r: Float) -> Float {
-        let vol = Float.pi / 12
-        return max(0, pow(r - 1, 2)) / vol
-    }
-
-    private func kernelGrad(_ r: Float) -> Float {
-        let vol = Float.pi / 12
-        return min(0, 2 * (r - 1) / vol)
-    }
-
-    init(on device: MTLDevice, particleCount: Int = 500) {
+    init(on device: MTLDevice, particleCount: Int = 5000) {
         self.metalDevice = device
         self._particleCount = particleCount
         uniforms.body_count = simd_int1(particleCount)
@@ -79,6 +80,12 @@ class Simulation {
         )
         self.computeHashesPipeline = try! device.makeComputePipelineState(
             function: library.makeFunction(name: "compute_hashes")!
+        )
+        self.updateAccelerationsAndXSPHVelocitiesPipeline = try! device.makeComputePipelineState(
+            function: library.makeFunction(name: "update_accelerations_and_XSPH")!
+        )
+        self.performEulerIntegrationStepPipeline = try! device.makeComputePipelineState(
+            function: library.makeFunction(name: "perform_euler_integration_step")!
         )
     }
 
@@ -97,28 +104,12 @@ class Simulation {
             )
     }
 
-    func getGridHash(_ i: simd_int1, _ j: simd_int1) -> simd_int1 {
-        return (i * 1291 + j * 10079) % simd_int1(particleCount)
-    }
-
     private func tickAndGetDeltaTime() -> Float {
         let currentTime = Date().timeIntervalSinceReferenceDate
         let deltaTime = Float(min(lastUpdatedTime.map { currentTime - $0 } ?? 0, maxTimeStepDuration))
         lastUpdatedTime = currentTime
 
         return deltaTime
-    }
-
-    private var threadsPerThreadgroup: MTLSize {
-        MTLSize(width: 64, height: 1, depth: 1)
-    }
-
-    private var threadgroupsPerGrid: MTLSize {
-        MTLSize(
-            width: (particleCount + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width,
-            height: 1,
-            depth: 1
-        )
     }
 
     private func updateDensities(computeEncoder: MTLComputeCommandEncoder) {
@@ -128,36 +119,6 @@ class Simulation {
         computeEncoder.setBuffer(cellStartBuffer, offset: 0, index: 2)
 
         computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
-    }
-
-    private func updateXSPHVelocities() {
-        let particles = particlesBuffer.contents().bindMemory(to: Particle.self, capacity: particleCount)
-        let cellStarts = cellStartBuffer.contents().bindMemory(to: simd_int1.self, capacity: particleCount)
-
-        for i in 0..<particleCount {
-            particles[i].xsph_velocity = .zero
-
-            let grid_i = simd_int1(particles[i].position.x / uniforms.kernelRadius)
-            let grid_j = simd_int1(particles[i].position.y / uniforms.kernelRadius)
-
-            for (oi, oj) in CELL_OFFSETS {
-                let hash = getGridHash(grid_i + oi, grid_j + oj)
-                let start = Int(cellStarts[Int(hash)])
-
-                guard start >= 0, start < particleCount else { continue } // empty cell
-
-                for j in start..<particleCount {
-                    guard particles[j].cellHash == hash else { break }
-                    guard i != j else { continue }
-
-                    let distance = simd_distance(particles[i].position, particles[j].position)
-                    guard distance > 0, distance < uniforms.kernelRadius else { continue }
-
-                    let influence = kernel(distance / uniforms.kernelRadius)
-                    particles[i].xsph_velocity += influence * particles[j].velocity / (particles[j].density + particles[i].density) * 2 * uniforms.xsph_strength
-                }
-            }
-        }
     }
 
     private func updateCellHashes(computeEncoder: MTLComputeCommandEncoder) {
@@ -189,54 +150,25 @@ class Simulation {
         }
     }
 
-    private func updateAccelerations() {
-        let particles = particlesBuffer.contents().bindMemory(to: Particle.self, capacity: particleCount)
-        let cellStarts = cellStartBuffer.contents().bindMemory(to: simd_int1.self, capacity: particleCount)
+    private func updateAccelerationsAndXSPHVelocities(computeEncoder: MTLComputeCommandEncoder) {
+        computeEncoder.setComputePipelineState(updateAccelerationsAndXSPHVelocitiesPipeline)
+        computeEncoder.setBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        computeEncoder.setBuffer(particlesBuffer, offset: 0, index: 1)
+        computeEncoder.setBuffer(cellStartBuffer, offset: 0, index: 2)
 
-        for i in 0..<particleCount {
-            particles[i].acceleration = .zero
-            particles[i].acceleration += uniforms.gravity
-        }
+        computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+    }
 
-        // pressure force
-        for i in 0..<particleCount {
-            let grid_i = simd_int1(particles[i].position.x / uniforms.kernelRadius)
-            let grid_j = simd_int1(particles[i].position.y / uniforms.kernelRadius)
+    private func performEulerIntegrationStep(computeEncoder: MTLComputeCommandEncoder) {
+        computeEncoder.setComputePipelineState(performEulerIntegrationStepPipeline)
+        computeEncoder.setBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        computeEncoder.setBuffer(particlesBuffer, offset: 0, index: 1)
 
-            for (oi, oj) in CELL_OFFSETS {
-                let hash = getGridHash(grid_i + oi, grid_j + oj)
-                let start = Int(cellStarts[Int(hash)])
-
-                guard start >= 0, start < particleCount else { continue } // empty cell
-
-                for j in start..<particleCount {
-                    guard particles[j].cellHash == hash else { break }
-                    guard i != j else { continue }
-
-                    let distance = simd_distance(particles[i].position, particles[j].position)
-                    guard distance > 0, distance < uniforms.kernelRadius else { continue }
-
-                    let gradient = simd_normalize(particles[i].position - particles[j].position)
-                        * kernelGrad(distance / uniforms.kernelRadius)
-
-                    let rho = simd_float2(particles[i].density, particles[j].density)
-                    let p: simd_float2 = uniforms.stiffness * pow(rho, simd_float2(repeating: uniforms.gamma))
-                    let ff = p / (rho * rho)
-
-                    particles[i].acceleration -= gradient * (ff.x + ff.y)
-
-                    // TODO: debug; remove later
-                    if particles[i].acceleration.x.isNaN || particles[i].acceleration.y.isNaN {
-                        fatalError("NaN acceleration")
-                    }
-                }
-            }
-        }
+        computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
 
     public func update() {
-        let h = 0.1 * tickAndGetDeltaTime()
-        let particles = particlesBuffer.contents().bindMemory(to: Particle.self, capacity: particleCount)
+        uniforms.step_size = 0.001 * tickAndGetDeltaTime()
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let computeEncoder = commandBuffer.makeComputeCommandEncoder()
@@ -255,35 +187,12 @@ class Simulation {
         else { assertionFailure(); return }
 
         updateDensities(computeEncoder: computeEncoder)
-
+        updateAccelerationsAndXSPHVelocities(computeEncoder: computeEncoder)
+        performEulerIntegrationStep(computeEncoder: computeEncoder)
+        
         computeEncoder.endEncoding()
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
-
-        updateXSPHVelocities()
-        updateAccelerations()
-
-        // naive euler integrator + wall collision check
-        for i in 0..<particleCount {
-            particles[i].velocity += particles[i].acceleration * h
-            particles[i].position += particles[i].velocity * h + particles[i].xsph_velocity * h
-
-            // Collision check
-            if particles[i].position.y < 0 {
-                particles[i].position.y = 0
-                particles[i].velocity.y *= -1 * uniforms.wallCollisionDampening
-            } else if particles[i].position.y > 1 {
-                particles[i].position.y = 1
-                particles[i].velocity.y *= -1 * uniforms.wallCollisionDampening
-            }
-            if particles[i].position.x < 0 {
-                particles[i].position.x = 0
-                particles[i].velocity.x *= -1 * uniforms.wallCollisionDampening
-            } else if particles[i].position.x > 1 {
-                particles[i].position.x = 1
-                particles[i].velocity.x *= -1 * uniforms.wallCollisionDampening
-            }
-        }
     }
 
     private func generateRandomParticlePositions() {

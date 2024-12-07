@@ -19,6 +19,7 @@ struct particle {
 };
 
 struct simulation_uniforms {
+    float time_step;
     int body_count;
     float wallCollisionDampening;
     float kernelRadius;

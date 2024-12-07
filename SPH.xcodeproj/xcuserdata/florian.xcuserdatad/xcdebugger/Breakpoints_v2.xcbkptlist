@@ -14,8 +14,8 @@
             filePath = "SPH/Shaders/simulation.metal"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "50"
-            endingLineNumber = "50"
+            startingLineNumber = "74"
+            endingLineNumber = "74"
             landmarkName = "update_densities(device const simulation_uniforms &amp;u [[ buffer(0 )]], device particle *particles [[ buffer(1) ]], device const int *cell_starts [[ buffer(2) ]], uint vid [[ thread_position_in_grid ]])"
             landmarkType = "9">
          </BreakpointContent>

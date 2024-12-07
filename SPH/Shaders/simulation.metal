@@ -42,6 +42,30 @@ kernel void compute_hashes(device const simulation_uniforms &u [[ buffer(0 )]],
                                      u.body_count);
 }
 
+kernel void perform_euler_integration_step(device const simulation_uniforms &u [[ buffer(0 )]],
+                                           device particle *particles [[ buffer(1) ]],
+                                           uint vid [[ thread_position_in_grid ]]) {
+    if (vid >= uint(u.body_count)) { return; }
+    
+    device particle *particle = particles + vid;
+    particle->velocity += particle->acceleration * u.time_step;
+    particle->position += particle->velocity * u.time_step + particle->xsph_velocity * u.time_step;
+    
+    // Collision check
+    if (particle->position.y < 0) {
+        particle->position.y = 0;
+        particle->velocity.y *= -1 * u.wallCollisionDampening;
+    } else if (particle->position.y > 1) {
+        particle->position.y = 1;
+        particle->velocity.y *= -1 * u.wallCollisionDampening;
+    } else if (particle->position.x < 0) {
+        particle->position.x = 0;
+        particle->velocity.x *= -1 * u.wallCollisionDampening;
+    } else if (particle->position.x > 1) {
+        particle->position.x = 1;
+        particle->velocity.x *= -1 * u.wallCollisionDampening;
+    }
+}
 
 kernel void update_densities(device const simulation_uniforms &u [[ buffer(0 )]],
                              device particle *particles [[ buffer(1) ]],
