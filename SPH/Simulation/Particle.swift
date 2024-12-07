@@ -15,5 +15,5 @@ struct SimulationParticle {
 
     var density: simd_float1
 
-    var cellHash: simd_int1
+    var cellHash: simd_uint1
 }

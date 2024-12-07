@@ -15,18 +15,25 @@ struct particle {
     float2 acceleration;
 
     float density;
-    int cellHash;
+    uint cellHash;
 };
 
 struct simulation_uniforms {
     float time_step;
-    int body_count;
+    uint body_count;
     float wallCollisionDampening;
     float kernelRadius;
-    float gravity;
+    float2 gravity;
     float stiffness;
     float gamma;
     float xsph_strength;
+    float friction;
+    
+    uint2 densityTextureSize;
+    
+    float2 dragCenter;
+    bool isDragging;
+    float dragRadius;
 };
 
 #endif /* definitions_h */
