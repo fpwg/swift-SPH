@@ -6,23 +6,14 @@
 //
 
 # include <metal_stdlib>
+#include "definitions.h"
 
 using namespace metal;
-
-struct particle {
-    float2 position;
-    float2 velocity;
-    float2 xsph_velocity;
-    float2 acceleration;
-
-    float density;
-    int cellHash;
-};
 
 struct vertex_out {
     float4 position [[ position ]];
     float point_size [[ point_size ]];
-    float intensity;
+    particle particle;
 };
 
 vertex vertex_out draw_particles_vertex_shader(const device particle *particles [[ buffer(0) ]],
@@ -30,13 +21,17 @@ vertex vertex_out draw_particles_vertex_shader(const device particle *particles 
     vertex_out out;
     out.position = float4(particles[id].position * 2 - 1, 0.0, 1.0);
     out.point_size = 5;
-    out.intensity = particles[id].density; //length(particles[id].velocity);
+    out.particle = particles[id];
 
     return out;
 }
 
 fragment float4 draw_particles_fragment_shader(vertex_out in [[ stage_in ]],
                                                float2 point_coord [[ point_coord ]]) {
-    float intensity = tanh(in.intensity);
-    return float4(intensity, 1-intensity, 1-intensity, 1);
+    
+    float intensity = tanh(in.particle.density * 10);
+    
+    float2 dir = normalize(in.particle.velocity.xy)*0.5 + 0.5;
+    
+    return float4(intensity, dir, 1);
 }

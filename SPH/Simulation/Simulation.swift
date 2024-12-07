@@ -10,6 +10,7 @@ import MetalKit
 import simd
 
 struct SimulationUniforms {
+    var body_count: simd_int1 = 500
     let wallCollisionDampening: Float = 0.9
     let kernelRadius: Float = 0.1
     let gravity: simd_float2 = .init(0, -1)
@@ -28,6 +29,11 @@ class Simulation {
     public var particlesBuffer: MTLBuffer!
     private var cellStartBuffer: MTLBuffer!
 
+    private var commandQueue: MTLCommandQueue!
+
+    private var updateDensititesPipeline: MTLComputePipelineState!
+    private var computeHashesPipeline: MTLComputePipelineState!
+
     private let CELL_OFFSETS: [(simd_int1, simd_int1)] =
         [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 0), (0, 1), (1, -1), (1, 0), (1, 1)]
 
@@ -38,6 +44,7 @@ class Simulation {
         }
         set {
             _particleCount = newValue
+            uniforms.body_count = simd_int1(newValue)
             initBuffers()
         }
     }
@@ -60,8 +67,19 @@ class Simulation {
     init(on device: MTLDevice, particleCount: Int = 500) {
         self.metalDevice = device
         self._particleCount = particleCount
+        uniforms.body_count = simd_int1(particleCount)
 
         initBuffers()
+
+        self.commandQueue = device.makeCommandQueue()!
+
+        let library = device.makeDefaultLibrary()!
+        self.updateDensititesPipeline = try! device.makeComputePipelineState(
+            function: library.makeFunction(name: "update_densities")!
+        )
+        self.computeHashesPipeline = try! device.makeComputePipelineState(
+            function: library.makeFunction(name: "compute_hashes")!
+        )
     }
 
     private func initBuffers() {
@@ -91,32 +109,25 @@ class Simulation {
         return deltaTime
     }
 
-    private func updateDensities() {
-        let particles = particlesBuffer.contents().bindMemory(to: Particle.self, capacity: particleCount)
-        let cellStarts = cellStartBuffer.contents().bindMemory(to: simd_int1.self, capacity: particleCount)
+    private var threadsPerThreadgroup: MTLSize {
+        MTLSize(width: 64, height: 1, depth: 1)
+    }
 
-        for i in 0..<particleCount {
-            particles[i].density = 0
-            let grid_i = simd_int1(particles[i].position.x / uniforms.kernelRadius)
-            let grid_j = simd_int1(particles[i].position.y / uniforms.kernelRadius)
+    private var threadgroupsPerGrid: MTLSize {
+        MTLSize(
+            width: (particleCount + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width,
+            height: 1,
+            depth: 1
+        )
+    }
 
-            for (oi, oj) in CELL_OFFSETS {
-                let hash = getGridHash(grid_i + oi, grid_j + oj)
-                let start = Int(cellStarts[Int(hash)])
+    private func updateDensities(computeEncoder: MTLComputeCommandEncoder) {
+        computeEncoder.setComputePipelineState(updateDensititesPipeline)
+        computeEncoder.setBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        computeEncoder.setBuffer(particlesBuffer, offset: 0, index: 1)
+        computeEncoder.setBuffer(cellStartBuffer, offset: 0, index: 2)
 
-                guard start >= 0, start < particleCount else { continue } // empty cell
-
-                for j in start..<particleCount {
-                    guard particles[j].cellHash == hash else { break }
-
-                    let distance = simd_distance(particles[i].position, particles[j].position)
-                    guard distance < uniforms.kernelRadius else { continue }
-
-                    let influence = kernel(distance / uniforms.kernelRadius) / Float(particleCount)
-                    particles[i].density += influence
-                }
-            }
-        }
+        computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
 
     private func updateXSPHVelocities() {
@@ -149,14 +160,16 @@ class Simulation {
         }
     }
 
-    private func updateCellHashes() {
+    private func updateCellHashes(computeEncoder: MTLComputeCommandEncoder) {
+        computeEncoder.setComputePipelineState(computeHashesPipeline)
+        computeEncoder.setBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        computeEncoder.setBuffer(particlesBuffer, offset: 0, index: 1)
+
+        computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+    }
+
+    private func sortHashes() {
         let particles = particlesBuffer.contents().bindMemory(to: Particle.self, capacity: particleCount)
-        for i in 0..<particleCount {
-            particles[i].cellHash = getGridHash(
-                simd_int1(particles[i].position.x / uniforms.kernelRadius),
-                simd_int1(particles[i].position.y / uniforms.kernelRadius)
-            )
-        }
 
         let particlesArray = Array(UnsafeBufferPointer(start: particles, count: particleCount))
         let sortedParticles = particlesArray.sorted { $0.cellHash < $1.cellHash }
@@ -207,7 +220,7 @@ class Simulation {
                         * kernelGrad(distance / uniforms.kernelRadius)
 
                     let rho = simd_float2(particles[i].density, particles[j].density)
-                    var p: simd_float2 = uniforms.stiffness * pow(rho, simd_float2(repeating: uniforms.gamma))
+                    let p: simd_float2 = uniforms.stiffness * pow(rho, simd_float2(repeating: uniforms.gamma))
                     let ff = p / (rho * rho)
 
                     particles[i].acceleration -= gradient * (ff.x + ff.y)
@@ -225,8 +238,28 @@ class Simulation {
         let h = 0.1 * tickAndGetDeltaTime()
         let particles = particlesBuffer.contents().bindMemory(to: Particle.self, capacity: particleCount)
 
-        updateCellHashes()
-        updateDensities()
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let computeEncoder = commandBuffer.makeComputeCommandEncoder()
+        else { assertionFailure(); return }
+
+        updateCellHashes(computeEncoder: computeEncoder)
+
+        computeEncoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
+        sortHashes()
+
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let computeEncoder = commandBuffer.makeComputeCommandEncoder()
+        else { assertionFailure(); return }
+
+        updateDensities(computeEncoder: computeEncoder)
+
+        computeEncoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
         updateXSPHVelocities()
         updateAccelerations()
 

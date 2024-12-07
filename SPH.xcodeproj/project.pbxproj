@@ -10,9 +10,22 @@
 		17103D8D2D03210600E94FB0 /* SPH.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SPH.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		17103DB82D0354C200E94FB0 /* Exceptions for "SPH" folder in "Compile Sources" phase from "SPH" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = 17103D892D03210600E94FB0 /* Sources */;
+			membershipExceptions = (
+				Shaders/definitions.h,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		17103D8F2D03210600E94FB0 /* SPH */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				17103DB82D0354C200E94FB0 /* Exceptions for "SPH" folder in "Compile Sources" phase from "SPH" target */,
+			);
 			path = SPH;
 			sourceTree = "<group>";
 		};
