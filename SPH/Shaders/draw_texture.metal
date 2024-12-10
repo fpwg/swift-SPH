@@ -7,6 +7,7 @@
 
 # include <metal_stdlib>
 #include "definitions.h"
+#include "render_commons.h"
 
 using namespace metal;
 
@@ -20,7 +21,8 @@ struct vertex_out {
     float2 tex_coord;
 };
 
-vertex vertex_out draw_texture_vertex_shader(const device vertex_in *vertices [[ buffer(0) ]],
+vertex vertex_out draw_texture_vertex_shader(const device renderer_uniforms &u [[ buffer(0) ]],
+                                             const device vertex_in *vertices [[ buffer(1) ]],
                                              uint id [[ vertex_id ]]) {
     vertex_in in = vertices[id];
     vertex_out out;
@@ -30,16 +32,15 @@ vertex vertex_out draw_texture_vertex_shader(const device vertex_in *vertices [[
     return out;
 }
 
-fragment float4 draw_texture_fragment_shader(vertex_out in [[ stage_in ]],
-                                             texture2d<float> texture [[ texture(0) ]],
+fragment float4 draw_texture_fragment_shader(const device renderer_uniforms &u [[ buffer(0) ]],
+                                             vertex_out in [[ stage_in ]],
+                                             texture2d<float> density_tex [[ texture(0) ]],
+                                             texture2d<float> velocity_tex [[ texture(1) ]],
                                              sampler sampler [[ sampler(0) ]]) {
-    float intensity = texture.sample(sampler, in.tex_coord).r * 100;
-    intensity = tanh(log(intensity + 1));
+    float density = density_tex.sample(sampler, in.tex_coord).r;
+    float2 velocity = velocity_tex.sample(sampler, in.tex_coord).rg;
+
+    float3 color = compute_fluid_color(u, density, velocity, in.tex_coord);
     
-    if (intensity < 0.1) {
-        discard_fragment();
-    }
-    float3 color = float3(0.1, 0.4, 1);
-    
-    return float4(color * intensity, 1);
+    return float4(color, 1);
 }

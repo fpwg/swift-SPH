@@ -7,6 +7,7 @@
 
 import Foundation
 import simd
+import SwiftUICore
 
 extension Simulation {
     var wallCollisionDampening: Float {
@@ -30,10 +31,19 @@ extension Simulation {
     
     var gravity: Float {
         get {
-            return -uniforms.gravity.y
+            return simd_length(uniforms.gravity)
         }
         set {
-            uniforms.gravity = simd_float2(0, -newValue)
+            uniforms.gravity = simd_normalize(uniforms.gravity) * simd_float1(newValue)
+        }
+    }
+    
+    var gravityDirection: Double {
+        get {
+            return Angle(radians: Double(atan2(uniforms.gravity.y, uniforms.gravity.x))).degrees
+        } set {
+            let angle: Float = .init(Angle(degrees: Double(newValue)).radians)
+            uniforms.gravity = simd_float2(cos(angle), sin(angle)) * gravity
         }
     }
     
@@ -73,6 +83,34 @@ extension Simulation {
         set {
             guard newValue != mousePushesParticles else { return }
             uniforms.drag_strength *= -1
+        }
+    }
+    
+    var intensityMultiplierLog: Float {
+        get {
+            return log(Float(rendererUniforms.intensityMultiplier))
+        }
+        set {
+            rendererUniforms.intensityMultiplier = simd_float1(exp(newValue))
+        }
+    }
+    
+    var cohesion: Float {
+        get {
+            return Float(uniforms.cohesion)
+        }
+        set {
+            uniforms.cohesion = simd_float1(newValue)
+        }
+    }
+    
+    var dragRadius: Float {
+        get {
+            return Float(uniforms.drag_radius)
+        }
+        set {
+            uniforms.drag_radius = simd_float1(newValue)
+            rendererUniforms.drag_radius = simd_float1(newValue)
         }
     }
 }

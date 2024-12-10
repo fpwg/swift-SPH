@@ -22,6 +22,17 @@ let squareVertices: [Vertex] = [
     Vertex(position: .init(-1, -1), texCoord: .init(0, 0)),
 ]
 
+struct RendererUniforms {
+    var fluid_color: simd_float3 = .init(0.1, 0.6, 0.8)
+    var dragged_fluid_color: simd_float3 = .init(0.1, 0.8, 1)
+
+    var drag_center: simd_float2 = .init(0.5, 0.5)
+    var is_dragging: simd_bool = false
+    var drag_radius: simd_float1 = 0.1
+
+    var intensityMultiplier: simd_float1 = exp(6.0)
+}
+
 class SimulationRenderer: NSObject, MTKViewDelegate {
     var device: MTLDevice {
         simulation.metalDevice
@@ -36,11 +47,20 @@ class SimulationRenderer: NSObject, MTKViewDelegate {
         simulation.densityTexture
     }
 
+    var velocityTexture: MTLTexture {
+        simulation.velocityTexture
+    }
+
     var vertexBuffer: MTLBuffer!
 
     var commandQueue: MTLCommandQueue!
     var drawParticlesRenderPipelineState: MTLRenderPipelineState!
     var drawTextureRenderPipelineState: MTLRenderPipelineState!
+
+    var uniforms: RendererUniforms {
+        get { simulation.rendererUniforms }
+        set { simulation.rendererUniforms = newValue }
+    }
 
     var sampler: MTLSamplerState!
 
@@ -86,16 +106,28 @@ class SimulationRenderer: NSObject, MTKViewDelegate {
 
         simulation.update()
 
+        uniforms.drag_center = simulation.uniforms.drag_center
+        uniforms.is_dragging = simulation.uniforms.is_dragging
+        uniforms.drag_radius = simulation.uniforms.drag_radius
+
         // Draw density texture
         renderEncoder.setRenderPipelineState(drawTextureRenderPipelineState)
-        renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+        renderEncoder.setVertexBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
+        renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 1)
+
+        renderEncoder.setFragmentBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
         renderEncoder.setFragmentTexture(densityTexture, index: 0)
+        renderEncoder.setFragmentTexture(velocityTexture, index: 1)
         renderEncoder.setFragmentSamplerState(sampler, index: 0)
+
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: squareVertices.count)
 
         // Draw particles on top
 //        renderEncoder.setRenderPipelineState(drawParticlesRenderPipelineState)
-//        renderEncoder.setVertexBuffer(particlesBuffer, offset: 0, index: 0)
+//        renderEncoder.setVertexBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
+//        renderEncoder.setVertexBuffer(particlesBuffer, offset: 0, index: 1)
+//        renderEncoder.setFragmentBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
+//
 //        renderEncoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: simulation.particleCount)
 
         renderEncoder.endEncoding()

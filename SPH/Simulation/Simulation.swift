@@ -15,7 +15,9 @@ struct SimulationUniforms {
     var wallCollisionDampening: simd_float1 = 1
     var kernelRadius: simd_float1 = 0.04
     var gravity: simd_float2 = .init(0, -1)
-    var stiffness: simd_float1 = 0.003
+    var stiffness: simd_float1 = 0.1
+    var rho0: simd_float1 = 1000
+    var cohesion: simd_float1 = 1
     var gamma: simd_float1 = 1.4
     var xsph_strength: simd_float1 = 0 // for now
 
@@ -27,6 +29,8 @@ struct SimulationUniforms {
     var is_dragging: simd_bool = false
     var drag_radius: simd_float1 = 0.1
     var drag_strength: simd_float1 = 10
+
+    var verletIsSecondPhase: simd_bool = false
 }
 
 class Simulation: ObservableObject {
@@ -43,8 +47,10 @@ class Simulation: ObservableObject {
     private var computeHashesPipeline: MTLComputePipelineState!
     private var updateAccelerationsAndXSPHVelocitiesPipeline: MTLComputePipelineState!
     private var performEulerIntegrationStepPipeline: MTLComputePipelineState!
+    private var performVerletPartialStepPipeline: MTLComputePipelineState!
 
     var densityTexture: MTLTexture!
+    var velocityTexture: MTLTexture!
     private var updateDensityTexturePipeline: MTLComputePipelineState!
 
     private var threadsPerThreadgroup: MTLSize {
@@ -93,9 +99,10 @@ class Simulation: ObservableObject {
     public var currentDeltaTime: Float = 0
 
     private var lastUpdatedTime: TimeInterval?
-    private let maxTimeStepDuration: TimeInterval = 1 / 10
+    private let maxTimeStepDuration: TimeInterval = 1 / 60
 
     var uniforms = Uniforms()
+    var rendererUniforms = RendererUniforms()
 
     init(on device: MTLDevice, particleCount: Int = 5000) {
         self.metalDevice = device
@@ -119,6 +126,9 @@ class Simulation: ObservableObject {
         self.performEulerIntegrationStepPipeline = try! device.makeComputePipelineState(
             function: library.makeFunction(name: "perform_euler_integration_step")!
         )
+        self.performVerletPartialStepPipeline = try! device.makeComputePipelineState(
+            function: library.makeFunction(name: "perform_verlet_partial_step")!
+        )
 
         let tex_desc = MTLTextureDescriptor()
         tex_desc.pixelFormat = .r32Float
@@ -127,6 +137,15 @@ class Simulation: ObservableObject {
         tex_desc.usage = [.shaderRead, .shaderWrite]
         self.densityTexture = device.makeTexture(
             descriptor: tex_desc
+        )!
+
+        let tex_desc2 = MTLTextureDescriptor()
+        tex_desc2.pixelFormat = .rg32Float
+        tex_desc2.width = Int(uniforms.density_texture_size.x)
+        tex_desc2.height = Int(uniforms.density_texture_size.y)
+        tex_desc2.usage = [.shaderRead, .shaderWrite]
+        self.velocityTexture = device.makeTexture(
+            descriptor: tex_desc2
         )!
 
         self.updateDensityTexturePipeline = try! device.makeComputePipelineState(
@@ -168,6 +187,7 @@ class Simulation: ObservableObject {
 
         computeEncoder.setComputePipelineState(updateDensityTexturePipeline)
         computeEncoder.setTexture(densityTexture, index: 0)
+        computeEncoder.setTexture(velocityTexture, index: 1)
         computeEncoder.setBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
         computeEncoder.setBuffer(particlesBuffer, offset: 0, index: 1)
         computeEncoder.setBuffer(cellStartBuffer, offset: 0, index: 2)
@@ -227,6 +247,15 @@ class Simulation: ObservableObject {
         computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
 
+    private func performVerletPartialStep(computeEncoder: MTLComputeCommandEncoder, onlyKick: Bool = false) {
+        computeEncoder.setComputePipelineState(performVerletPartialStepPipeline)
+        uniforms.verletIsSecondPhase = onlyKick
+        computeEncoder.setBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        computeEncoder.setBuffer(particlesBuffer, offset: 0, index: 1)
+
+        computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+    }
+
     public func update() {
         uniforms.step_size = tickAndGetDeltaTime()
 
@@ -240,6 +269,9 @@ class Simulation: ObservableObject {
 
         updateCellHashes(computeEncoder: computeEncoder)
 
+        // uses the old value of the acceleration
+        performVerletPartialStep(computeEncoder: computeEncoder, onlyKick: false)
+
         computeEncoder.endEncoding()
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
@@ -251,9 +283,9 @@ class Simulation: ObservableObject {
         else { assertionFailure(); return }
 
         updateDensities(computeEncoder: computeEncoder)
-
         updateAccelerationsAndXSPHVelocities(computeEncoder: computeEncoder)
-        performEulerIntegrationStep(computeEncoder: computeEncoder)
+        // second partial verlet step using the new acceleration
+        performVerletPartialStep(computeEncoder: computeEncoder, onlyKick: true)
 
         computeEncoder.endEncoding()
         commandBuffer.commit()
@@ -264,7 +296,7 @@ class Simulation: ObservableObject {
         let particles = particlesBuffer.contents().bindMemory(to: Particle.self, capacity: particleCount)
         for i in 0..<particleCount {
             particles[i].position = simd_float2(
-                Float.random(in: 0.5..<0.99),
+                Float.random(in: 0.01..<0.99),
                 Float.random(in: 0.01..<0.99)
             )
             particles[i].velocity = simd_float2(

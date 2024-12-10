@@ -25,6 +25,8 @@ struct simulation_uniforms {
     float kernelRadius;
     float2 gravity;
     float stiffness;
+    float rho0;
+    float cohesion;
     float gamma;
     float xsph_strength;
     float friction;
@@ -35,6 +37,19 @@ struct simulation_uniforms {
     bool isDragging;
     float dragRadius;
     float dragStrength;
+    
+    bool verletIsSecondPhase;
+};
+
+struct renderer_uniforms {
+    float3 fluidColor;
+    float3 draggedFluidColor;
+    
+    float2 dragCenter;
+    bool isDragging;
+    float dragRadius;
+    
+    float intensityMultiplier;
 };
 
 #endif /* definitions_h */

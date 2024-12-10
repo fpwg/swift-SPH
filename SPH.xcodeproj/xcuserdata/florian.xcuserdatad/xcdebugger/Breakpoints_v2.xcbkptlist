@@ -3,4 +3,22 @@
    uuid = "47B3BE51-222A-402A-85EB-7E696DACE32C"
    type = "1"
    version = "2.0">
+   <Breakpoints>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "44D011A1-B41D-4B7E-BB73-1EE7D5B7AC1F"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "SPH/Shaders/simulation.metal"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "178"
+            endingLineNumber = "178"
+            landmarkName = "update_density_texture(device const simulation_uniforms &amp;u [[ buffer(0 )]], device particle *particles [[ buffer(1) ]], device const uint *cell_starts [[ buffer(2) ]], texture2d&lt;float, access::write&gt; density_texture [[ texture(0) ]], texture2d&lt;float, access::write&gt; velocity_texture [[ texture(1) ]], uint2 gid [[ thread_position_in_grid ]])"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+   </Breakpoints>
 </Bucket>

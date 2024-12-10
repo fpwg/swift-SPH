@@ -91,12 +91,16 @@ struct ContentView: View {
                 Divider()
                 FlexibleGrid(itemWidth: 110, spacing: 10) {
                     inputField(title: "Particle count", value: $simulation.particleCount, systemImage: "chart.dots.scatter")
-                    inputField(title: "Kernel radius", value: $simulation.kernelRadius, systemImage: "circle.grid.cross")
+                    inputField(title: "Kernel radius", value: $simulation.kernelRadius, systemImage: "ruler")
                     inputField(title: "Stiffness", value: $simulation.stiffness, systemImage: "rectangle.compress.vertical")
                     inputField(title: "Gravity", value: $simulation.gravity, systemImage: "scalemass.fill")
+                    inputField(title: "Gravity direction", value: $simulation.gravityDirection, systemImage: "arrow.down")
                     inputField(title: "Friction", value: $simulation.friction, systemImage: "tortoise.fill")
                     inputField(title: "Collision dampening", value: $simulation.wallCollisionDampening, systemImage: "square.dotted")
                     inputField(title: "XSPH", value: $simulation.xsph_strength, systemImage: "heat.waves")
+                    inputField(title: "Brightness", value: $simulation.intensityMultiplierLog, systemImage: "circle.lefthalf.filled")
+                    inputField(title: "Cohesion", value: $simulation.cohesion, systemImage: "link")
+                    inputField(title: "Drag Radius", value: $simulation.dragRadius, systemImage: "hand.pinch")
 
                 }.padding(.top.union(.horizontal), 5)
             }

@@ -65,6 +65,38 @@ float query_density(float2 position,
     return density;
 }
 
+float2 query_velocity(float2 position,
+                    simulation_uniforms u,
+                    device particle *particles,
+                    device const uint *cell_starts) {
+    
+    uint2 grid_index = getGridIndex(position, u.kernelRadius);
+    float2 velocity = 0;
+    
+    for (uint off_idx = 0; off_idx < 9; ++off_idx) {
+        uint hash = getGridHash(
+            uint2(int2(grid_index) + cell_offsets[off_idx]),
+            u.body_count
+        );
+
+        uint start = cell_starts[hash];
+        if (start < 0 || start >= u.body_count) { continue; } // empty cell
+        
+        for (uint j = start; j < u.body_count; ++j) {
+            if (particles[j].cellHash != hash) { break; } // end of cell
+            
+            float dist = length(position - particles[j].position);
+            if (dist > u.kernelRadius || isnan(dist)) { continue; }
+
+            float influence = sph_kernel(dist / u.kernelRadius) / float(u.body_count);
+            velocity += particles[j].velocity * influence / particles[j].density;
+        }
+    }
+    
+    return velocity;
+}
+
+
 void box_collision(device particle *particle, simulation_uniforms u) {
     if (particle->position.y < 0) {
         particle->position.y = 0;
@@ -110,6 +142,26 @@ kernel void perform_euler_integration_step(device const simulation_uniforms &u [
     box_collision(particle, u);
 }
 
+kernel void perform_verlet_partial_step(device const simulation_uniforms &u [[ buffer(0) ]],
+                                        device particle *particles [[ buffer(1) ]],
+                                        uint vid [[ thread_position_in_grid ]]) {
+    if (vid >= u.body_count) { return; }
+    
+
+    device particle *particle = particles + vid;
+    particle->velocity = particle->velocity + 0.5 * u.time_step * particle->acceleration;
+    if (u.verletIsSecondPhase) return;
+    
+    particle->velocity *= 1-u.friction; // friction only every other partial step
+    
+    particle->position = particle->position + u.time_step * particle->velocity;
+    particle->position += particle->xsph_velocity * u.time_step * u.xsph_strength;
+    
+    box_collision(particle, u);
+}
+
+
+
 kernel void update_densities(device const simulation_uniforms &u [[ buffer(0)]],
                              device particle *particles [[ buffer(1) ]],
                              device const uint *cell_starts [[ buffer(2) ]],
@@ -124,13 +176,17 @@ kernel void update_density_texture(device const simulation_uniforms &u [[ buffer
                                    device particle *particles [[ buffer(1) ]],
                                    device const uint *cell_starts [[ buffer(2) ]],
                                    texture2d<float, access::write> density_texture [[ texture(0) ]],
+                                   texture2d<float, access::write> velocity_texture [[ texture(1) ]],
                                    uint2 gid [[ thread_position_in_grid ]]) {
     if (gid.x >= u.densityTextureSize.x || gid.y >= u.densityTextureSize.y) { return; }
     
     float2 position = float2(gid) / float2(u.densityTextureSize);
+    // TODO: possibly merge these two queries into one
     float density = query_density(position, u, particles, cell_starts);
+    float2 velocity = query_velocity(position, u, particles, cell_starts);
     
     density_texture.write(density, gid);
+    velocity_texture.write(float4(velocity, 0, 0), gid);
 }
 
 
@@ -146,7 +202,11 @@ kernel void update_accelerations_and_XSPH(device const simulation_uniforms &u [[
     particle->acceleration = float2(0);
     particle->xsph_velocity = float2(0);
     
-    particle->acceleration += u.gravity;
+     particle->acceleration += u.gravity;
+//    float r = length(particle->position - float2(0.5));
+//    float2 d = normalize(particle->position - float2(0.5));
+//    particle->acceleration -= 0.1*d / pow(r+0.1, 2);
+    
     
     if (u.isDragging && u.dragRadius > length(particle->position - u.dragCenter)) {
         
@@ -180,7 +240,7 @@ kernel void update_accelerations_and_XSPH(device const simulation_uniforms &u [[
             float2 gradient = normalize(particle->position - particles[j].position)
                 * sph_kernel_grad(dist / u.kernelRadius);
             float2 rho = float2(particle->density, particles[j].density);
-            float2 p = u.stiffness * pow(rho, u.gamma);
+            float2 p = u.rho0 * u.stiffness * (pow(rho / u.rho0, u.gamma) - 1e-8 * u.cohesion);
             float2 ff = p / pow(rho, 2);
             
             particle->acceleration -= gradient * (ff.x + ff.y);
@@ -192,28 +252,6 @@ kernel void update_accelerations_and_XSPH(device const simulation_uniforms &u [[
     }
 }
 
-
-// Courtesy of ChatGPT
-kernel void bitonic_sort_particles_by_hash(device const simulation_uniforms &u [[ buffer(0 )]],
-                                           device particle *particles [[ buffer(1) ]],
-                                           uint tid [[thread_position_in_grid]]) {
-    uint n = u.body_count;
-    
-    for (uint k = 2; k <= n; k <<= 1) {
-        for (uint j = k >> 1; j > 0; j >>= 1) {
-            uint ixj = tid ^ j;
-            if (ixj > tid && ixj < n && tid < n) {
-                bool ascending = ((tid & k) == 0);
-                if ((particles[tid].cellHash > particles[ixj].cellHash) == ascending) {
-                    particle tmp = particles[tid];
-                    particles[tid] = particles[ixj];
-                    particles[ixj] = tmp;
-                }
-            }
-            threadgroup_barrier(mem_flags::mem_device);
-        }
-    }
-}
 
 kernel void update_starts_buffer(device const simulation_uniforms &u [[ buffer(0)]],
                                  device const particle *particles [[ buffer(1) ]],
