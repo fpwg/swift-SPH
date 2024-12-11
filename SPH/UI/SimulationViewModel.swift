@@ -34,12 +34,14 @@ extension Simulation {
             return simd_length(uniforms.gravity)
         }
         set {
+            if uniforms.gravity == .zero { uniforms.gravity = simd_float2(0, -newValue) }
             uniforms.gravity = simd_normalize(uniforms.gravity) * simd_float1(newValue)
         }
     }
     
     var gravityDirection: Double {
         get {
+            if uniforms.gravity == .zero { return -90 }
             return Angle(radians: Double(atan2(uniforms.gravity.y, uniforms.gravity.x))).degrees
         } set {
             let angle: Float = .init(Angle(degrees: Double(newValue)).radians)

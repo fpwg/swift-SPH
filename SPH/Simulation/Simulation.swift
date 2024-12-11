@@ -30,7 +30,7 @@ struct SimulationUniforms {
     var drag_radius: simd_float1 = 0.1
     var drag_strength: simd_float1 = 10
 
-    var verletIsSecondPhase: simd_bool = false
+    var leapfrogIsSecondPhase: simd_bool = false
 }
 
 class Simulation: ObservableObject {
@@ -47,7 +47,7 @@ class Simulation: ObservableObject {
     private var computeHashesPipeline: MTLComputePipelineState!
     private var updateAccelerationsAndXSPHVelocitiesPipeline: MTLComputePipelineState!
     private var performEulerIntegrationStepPipeline: MTLComputePipelineState!
-    private var performVerletPartialStepPipeline: MTLComputePipelineState!
+    private var performLeapfrogPartialStepPipeline: MTLComputePipelineState!
 
     var densityTexture: MTLTexture!
     var velocityTexture: MTLTexture!
@@ -126,8 +126,8 @@ class Simulation: ObservableObject {
         self.performEulerIntegrationStepPipeline = try! device.makeComputePipelineState(
             function: library.makeFunction(name: "perform_euler_integration_step")!
         )
-        self.performVerletPartialStepPipeline = try! device.makeComputePipelineState(
-            function: library.makeFunction(name: "perform_verlet_partial_step")!
+        self.performLeapfrogPartialStepPipeline = try! device.makeComputePipelineState(
+            function: library.makeFunction(name: "perform_leapfrog_partial_step")!
         )
 
         let tex_desc = MTLTextureDescriptor()
@@ -247,9 +247,9 @@ class Simulation: ObservableObject {
         computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
 
-    private func performVerletPartialStep(computeEncoder: MTLComputeCommandEncoder, onlyKick: Bool = false) {
-        computeEncoder.setComputePipelineState(performVerletPartialStepPipeline)
-        uniforms.verletIsSecondPhase = onlyKick
+    private func perfromLeapfrogPartialStep(computeEncoder: MTLComputeCommandEncoder, onlyKick: Bool = false) {
+        computeEncoder.setComputePipelineState(performLeapfrogPartialStepPipeline)
+        uniforms.leapfrogIsSecondPhase = onlyKick
         computeEncoder.setBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
         computeEncoder.setBuffer(particlesBuffer, offset: 0, index: 1)
 
@@ -270,7 +270,7 @@ class Simulation: ObservableObject {
         updateCellHashes(computeEncoder: computeEncoder)
 
         // uses the old value of the acceleration
-        performVerletPartialStep(computeEncoder: computeEncoder, onlyKick: false)
+        perfromLeapfrogPartialStep(computeEncoder: computeEncoder, onlyKick: false)
 
         computeEncoder.endEncoding()
         commandBuffer.commit()
@@ -285,7 +285,7 @@ class Simulation: ObservableObject {
         updateDensities(computeEncoder: computeEncoder)
         updateAccelerationsAndXSPHVelocities(computeEncoder: computeEncoder)
         // second partial verlet step using the new acceleration
-        performVerletPartialStep(computeEncoder: computeEncoder, onlyKick: true)
+        perfromLeapfrogPartialStep(computeEncoder: computeEncoder, onlyKick: true)
 
         computeEncoder.endEncoding()
         commandBuffer.commit()
@@ -297,7 +297,7 @@ class Simulation: ObservableObject {
         for i in 0..<particleCount {
             particles[i].position = simd_float2(
                 Float.random(in: 0.01..<0.99),
-                Float.random(in: 0.01..<0.99)
+                Float.random(in: 0.6..<0.99)
             )
             particles[i].velocity = simd_float2(
                 0,

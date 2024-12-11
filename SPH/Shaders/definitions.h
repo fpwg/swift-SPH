@@ -38,7 +38,7 @@ struct simulation_uniforms {
     float dragRadius;
     float dragStrength;
     
-    bool verletIsSecondPhase;
+    bool leapfrogIsSecondPhase;
 };
 
 struct renderer_uniforms {

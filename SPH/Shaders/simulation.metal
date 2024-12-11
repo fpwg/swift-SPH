@@ -142,7 +142,7 @@ kernel void perform_euler_integration_step(device const simulation_uniforms &u [
     box_collision(particle, u);
 }
 
-kernel void perform_verlet_partial_step(device const simulation_uniforms &u [[ buffer(0) ]],
+kernel void perform_leapfrog_partial_step(device const simulation_uniforms &u [[ buffer(0) ]],
                                         device particle *particles [[ buffer(1) ]],
                                         uint vid [[ thread_position_in_grid ]]) {
     if (vid >= u.body_count) { return; }
@@ -150,7 +150,7 @@ kernel void perform_verlet_partial_step(device const simulation_uniforms &u [[ b
 
     device particle *particle = particles + vid;
     particle->velocity = particle->velocity + 0.5 * u.time_step * particle->acceleration;
-    if (u.verletIsSecondPhase) return;
+    if (u.leapfrogIsSecondPhase) return;
     
     particle->velocity *= 1-u.friction; // friction only every other partial step
     
