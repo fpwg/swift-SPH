@@ -9,7 +9,7 @@
 #include "definitions.h"
 #include "render_commons.h"
 
-#define PARTICLE_SIZE 20
+#define PARTICLE_SIZE 5
 
 using namespace metal;
 

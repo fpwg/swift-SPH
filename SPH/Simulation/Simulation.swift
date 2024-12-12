@@ -5,6 +5,7 @@
 //  Created by Florian Plaswig on 06.12.24.
 //
 
+import Accelerate
 import Foundation
 import MetalKit
 import simd
@@ -23,7 +24,7 @@ struct SimulationUniforms {
 
     var friction: simd_float1 = 1e-2
 
-    var density_texture_size: simd_uint2 = .init(300, 300)
+    var density_texture_size: simd_uint2 = .init(256, 256)
 
     var drag_center: simd_float2 = .init(0.5, 0.5)
     var is_dragging: simd_bool = false
@@ -51,6 +52,7 @@ class Simulation: ObservableObject {
 
     var densityTexture: MTLTexture!
     var velocityTexture: MTLTexture!
+    var potentialTexture: MTLTexture!
     private var updateDensityTexturePipeline: MTLComputePipelineState!
 
     private var threadsPerThreadgroup: MTLSize {
@@ -147,6 +149,15 @@ class Simulation: ObservableObject {
         self.velocityTexture = device.makeTexture(
             descriptor: tex_desc2
         )!
+
+        let tex_desc3 = MTLTextureDescriptor()
+        tex_desc3.pixelFormat = .r32Float
+        tex_desc3.width = Int(uniforms.density_texture_size.x)
+        tex_desc3.height = Int(uniforms.density_texture_size.y)
+        tex_desc3.usage = [.shaderRead, .shaderWrite]
+        self.potentialTexture = device.makeTexture(
+            descriptor: tex_desc3
+        )
 
         self.updateDensityTexturePipeline = try! device.makeComputePipelineState(
             function: library.makeFunction(name: "update_density_texture")!
@@ -256,6 +267,41 @@ class Simulation: ObservableObject {
         computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
 
+    private func computePotential() {
+//        assert(uniforms.density_texture_size.x == uniforms.density_texture_size.y)
+//
+//        let arrayCount = Int(uniforms.density_texture_size.x) * Int(uniforms.density_texture_size.y)
+//
+//        var density: UnsafeMutablePointer<simd_float1> = .allocate(capacity: arrayCount)
+//        densityTexture.getBytes(&density, bytesPerRow: MemoryLayout<simd_float1>.stride * Int(uniforms.density_texture_size.x), from: MTLRegionMake2D(0, 0, Int(uniforms.density_texture_size.x), Int(uniforms.density_texture_size.y)), mipmapLevel: 0)
+//
+//
+//        var density_imag: UnsafeMutablePointer<simd_float1> = .allocate(capacity: arrayCount)
+//        var density_complex = DSPSplitComplex(realp: density, imagp: density_imag)
+//
+//        var intermediate_real: UnsafeMutablePointer<Float> = .allocate(capacity: arrayCount)
+//        var intermediate_imag: UnsafeMutablePointer<Float> = .allocate(capacity: arrayCount)
+//        var intermediate_complex = DSPSplitComplex(realp: intermediate_real, imagp: intermediate_imag)
+//
+//        let fft2d = vDSP.FFT2D(width: Int(uniforms.density_texture_size.x), height: Int(uniforms.density_texture_size.y), ofType: DSPSplitComplex.self)!
+//
+//        fft2d.transform(input: density_complex, output: &intermediate_complex, direction: .forward)
+//
+        ////        let sample_spacing = 1 / uniforms.density_texture_size.x
+        ////        for i in 0..<arrayCount {
+        ////            let ix = i % Int(uniforms.density_texture_size.x)
+        ////            let iy = i / Int(uniforms.density_texture_size.x)
+        ////
+        ////            let (kx, ky) = (Float(ix), Float(iy))
+        ////        }
+//
+//        // Deallocate buffers
+//        density.deallocate()
+//        density_imag.deallocate()
+//        intermediate_real.deallocate()
+//        intermediate_imag.deallocate()
+    }
+
     public func update() {
         uniforms.step_size = tickAndGetDeltaTime()
 
@@ -277,6 +323,7 @@ class Simulation: ObservableObject {
         commandBuffer.waitUntilCompleted()
 
         sortHashes()
+        computePotential()
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let computeEncoder = commandBuffer.makeComputeCommandEncoder()

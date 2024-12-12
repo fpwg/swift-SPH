@@ -36,7 +36,8 @@ fragment float4 draw_texture_fragment_shader(const device renderer_uniforms &u [
                                              vertex_out in [[ stage_in ]],
                                              texture2d<float> density_tex [[ texture(0) ]],
                                              texture2d<float> velocity_tex [[ texture(1) ]],
-                                             sampler sampler [[ sampler(0) ]]) {
+                                             texture2d<float> potential_tex [[ texture(2) ]],
+                                             sampler sampler [[ sampler(0) ]]) {    
     float density = density_tex.sample(sampler, in.tex_coord).r;
     float2 velocity = velocity_tex.sample(sampler, in.tex_coord).rg;
 

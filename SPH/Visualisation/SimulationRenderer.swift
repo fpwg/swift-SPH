@@ -51,6 +51,10 @@ class SimulationRenderer: NSObject, MTKViewDelegate {
         simulation.velocityTexture
     }
 
+    var potentialTexture: MTLTexture {
+        simulation.potentialTexture
+    }
+
     var vertexBuffer: MTLBuffer!
 
     var commandQueue: MTLCommandQueue!
@@ -118,17 +122,18 @@ class SimulationRenderer: NSObject, MTKViewDelegate {
         renderEncoder.setFragmentBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
         renderEncoder.setFragmentTexture(densityTexture, index: 0)
         renderEncoder.setFragmentTexture(velocityTexture, index: 1)
+        renderEncoder.setFragmentTexture(potentialTexture, index: 2)
         renderEncoder.setFragmentSamplerState(sampler, index: 0)
 
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: squareVertices.count)
 
         // Draw particles on top
-//        renderEncoder.setRenderPipelineState(drawParticlesRenderPipelineState)
-//        renderEncoder.setVertexBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
-//        renderEncoder.setVertexBuffer(particlesBuffer, offset: 0, index: 1)
-//        renderEncoder.setFragmentBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
-//
-//        renderEncoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: simulation.particleCount)
+        renderEncoder.setRenderPipelineState(drawParticlesRenderPipelineState)
+        renderEncoder.setVertexBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
+        renderEncoder.setVertexBuffer(particlesBuffer, offset: 0, index: 1)
+        renderEncoder.setFragmentBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
+
+        renderEncoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: simulation.particleCount)
 
         renderEncoder.endEncoding()
         commandBuffer.present(drawable)
