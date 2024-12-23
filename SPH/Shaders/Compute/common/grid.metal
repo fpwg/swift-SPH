@@ -6,7 +6,7 @@
 //
 
 #include <metal_stdlib>
-#include "../definitions.h"
+#include "../../definitions.h"
 #include "grid.h"
 
 using namespace metal;
@@ -37,7 +37,6 @@ NeighbourhoodIterator::NeighbourhoodIterator(ParticleHashGrid grid,
                              device particle *particles,
                              device const uint *cellStarts,
                              int2 gridPos) : grid(grid), particles(particles), cellStarts(cellStarts), ofGridPosition(gridPos) {
-    // initialize the iterator
     int2 cellPosition = gridPos + cellOffsets[offsetIndex];
     uint cellHash = grid.hash(cellPosition);
     uint cellStart = cellStarts[cellHash];

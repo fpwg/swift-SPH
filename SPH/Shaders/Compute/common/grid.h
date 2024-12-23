@@ -51,6 +51,10 @@ public:
     inline device particle* operator->() { return &particles[currentIndex]; }
     inline bool hasNext() { return !done; }
     
+    inline uint getCurrentIndex() {
+        return currentIndex;
+    }
+    
     void next();
 };
 

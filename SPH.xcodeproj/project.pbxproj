@@ -20,6 +20,7 @@
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = 17103D892D03210600E94FB0 /* Sources */;
 			membershipExceptions = (
+				Shaders/Compute/common/kernel.h,
 				Shaders/definitions.h,
 				Shaders/Rendering/render_commons.h,
 			);
