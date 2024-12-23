@@ -6,16 +6,12 @@
 //
 
 #include <metal_stdlib>
-#include "definitions.h"
+#include "../definitions.h"
+#include "grid.h"
 
 using namespace metal;
 
 constant uint2 hash_params = uint2(37, 1297);
-constant int2 cell_offsets[9] = {
-    int2(-1, -1), int2(-1, 0), int2(-1, 1),
-    int2(0, -1), int2(0, 0), int2(0, 1),
-    int2(1, -1), int2(1, 0), int2(1, 1)
-};
 
 uint2 getGridIndex(float2 position, float kernelRadius) {
     return uint2(floor(position / kernelRadius));
@@ -38,15 +34,13 @@ float query_density(float2 position,
                     simulation_uniforms u,
                     device particle *particles,
                     device const uint *cell_starts) {
+    auto grid = ParticleHashGrid(u.kernelRadius, u.body_count);
+    int2 grid_index = grid.getGridPosition(position);
     
-    uint2 grid_index = getGridIndex(position, u.kernelRadius);
     float density = 0;
     
     for (uint off_idx = 0; off_idx < 9; ++off_idx) {
-        uint hash = getGridHash(
-            uint2(int2(grid_index) + cell_offsets[off_idx]),
-            u.body_count
-        );
+        uint hash = grid.hash(grid_index + cellOffsets[off_idx]);
 
         uint start = cell_starts[hash];
         if (start < 0 || start >= u.body_count) { continue; } // empty cell
@@ -75,7 +69,7 @@ float2 query_velocity(float2 position,
     
     for (uint off_idx = 0; off_idx < 9; ++off_idx) {
         uint hash = getGridHash(
-            uint2(int2(grid_index) + cell_offsets[off_idx]),
+                                uint2(int2(grid_index) + cellOffsets[off_idx]),
             u.body_count
         );
 
@@ -120,9 +114,8 @@ kernel void compute_hashes(device const simulation_uniforms &u [[ buffer(0 )]],
                            uint vid [[ thread_position_in_grid ]]) {
     if (vid >= uint(u.body_count)) { return; }
     
-    device particle *particle = particles + vid;
-    uint2 grid_index = getGridIndex(particle->position, u.kernelRadius);
-    particle->cellHash = getGridHash(grid_index, u.body_count);
+    auto grid = ParticleHashGrid(u.kernelRadius, u.body_count);
+    grid.updateParticleHash(particles[vid]);
 }
 
 kernel void perform_euler_integration_step(device const simulation_uniforms &u [[ buffer(0 )]],
@@ -193,6 +186,7 @@ kernel void update_density_texture(device const simulation_uniforms &u [[ buffer
 kernel void update_accelerations_and_XSPH(device const simulation_uniforms &u [[ buffer(0 )]],
                                           device particle *particles [[ buffer(1) ]],
                                           device const uint *cell_starts [[ buffer(2) ]],
+                                          texture2d<float, access::read> potential_texture [[ texture(0) ]],
                                           uint vid [[ thread_position_in_grid ]]) {
     
     if (vid >= uint(u.body_count)) { return; }
@@ -202,10 +196,20 @@ kernel void update_accelerations_and_XSPH(device const simulation_uniforms &u [[
     particle->acceleration = float2(0);
     particle->xsph_velocity = float2(0);
     
-     particle->acceleration += u.gravity;
+    uint2 particle_index_in_density_texture = uint2(round(particle->position * float2(u.densityTextureSize)));
+    
+    
+    float gradientX = 0.5 * (potential_texture.read(particle_index_in_density_texture+uint2(0,1)).r - potential_texture.read(particle_index_in_density_texture-uint2(1,0)).r) /
+    u.densityTextureSize.x;
+    float gradientY = 0.5 * (potential_texture.read(particle_index_in_density_texture+uint2(0,1)).r - potential_texture.read(particle_index_in_density_texture-uint2(0,1)).r) / u.densityTextureSize.y;
+    
+    particle->acceleration += 1e4 * float2(gradientX, gradientY) * length(u.gravity) * particle->density;
+    
+//     particle->acceleration += u.gravity;
 //    float r = length(particle->position - float2(0.5));
 //    float2 d = normalize(particle->position - float2(0.5));
 //    particle->acceleration -= 0.1*d / pow(r+0.1, 2);
+    
     
     
     if (u.isDragging && u.dragRadius > length(particle->position - u.dragCenter)) {
@@ -222,7 +226,7 @@ kernel void update_accelerations_and_XSPH(device const simulation_uniforms &u [[
     
     for (int off_idx = 0; off_idx < 9; ++off_idx) {
         uint hash = getGridHash(
-            uint2(int2(grid_index) + cell_offsets[off_idx]),
+                                uint2(int2(grid_index) + cellOffsets[off_idx]),
             u.body_count
         );
 

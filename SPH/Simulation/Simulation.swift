@@ -10,6 +10,8 @@ import Foundation
 import MetalKit
 import simd
 
+import GameKit
+
 struct SimulationUniforms {
     var step_size: simd_float1 = 0.01
     var body_count: simd_uint1 = 500
@@ -24,7 +26,7 @@ struct SimulationUniforms {
 
     var friction: simd_float1 = 1e-2
 
-    var density_texture_size: simd_uint2 = .init(256, 256)
+    var density_texture_size: simd_uint2 = .init(128, 128)
 
     var drag_center: simd_float2 = .init(0.5, 0.5)
     var is_dragging: simd_bool = false
@@ -32,6 +34,11 @@ struct SimulationUniforms {
     var drag_strength: simd_float1 = 10
 
     var leapfrogIsSecondPhase: simd_bool = false
+}
+
+struct DFTUniforms {
+    var size: simd_uint2
+    var inverse: simd_bool
 }
 
 class Simulation: ObservableObject {
@@ -49,10 +56,13 @@ class Simulation: ObservableObject {
     private var updateAccelerationsAndXSPHVelocitiesPipeline: MTLComputePipelineState!
     private var performEulerIntegrationStepPipeline: MTLComputePipelineState!
     private var performLeapfrogPartialStepPipeline: MTLComputePipelineState!
+    private var dftPipeline: MTLComputePipelineState!
+    private var computeInverseLaplacianPipeline: MTLComputePipelineState!
 
     var densityTexture: MTLTexture!
     var velocityTexture: MTLTexture!
     var potentialTexture: MTLTexture!
+    var fourierSpaceTexture: MTLTexture!
     private var updateDensityTexturePipeline: MTLComputePipelineState!
 
     private var threadsPerThreadgroup: MTLSize {
@@ -131,15 +141,22 @@ class Simulation: ObservableObject {
         self.performLeapfrogPartialStepPipeline = try! device.makeComputePipelineState(
             function: library.makeFunction(name: "perform_leapfrog_partial_step")!
         )
+        self.dftPipeline = try! device.makeComputePipelineState(
+            function: library.makeFunction(name: "dft_texture")!
+        )
+        self.computeInverseLaplacianPipeline = try! device.makeComputePipelineState(
+            function: library.makeFunction(name: "apply_inverse_laplacian")!
+        )
 
         let tex_desc = MTLTextureDescriptor()
-        tex_desc.pixelFormat = .r32Float
+        tex_desc.pixelFormat = .rg32Float
         tex_desc.width = Int(uniforms.density_texture_size.x)
         tex_desc.height = Int(uniforms.density_texture_size.y)
         tex_desc.usage = [.shaderRead, .shaderWrite]
         self.densityTexture = device.makeTexture(
             descriptor: tex_desc
         )!
+        densityTexture.label = "Density Texture"
 
         let tex_desc2 = MTLTextureDescriptor()
         tex_desc2.pixelFormat = .rg32Float
@@ -149,15 +166,27 @@ class Simulation: ObservableObject {
         self.velocityTexture = device.makeTexture(
             descriptor: tex_desc2
         )!
+        velocityTexture.label = "Velocity Texture"
 
         let tex_desc3 = MTLTextureDescriptor()
-        tex_desc3.pixelFormat = .r32Float
+        tex_desc3.pixelFormat = .rg32Float
         tex_desc3.width = Int(uniforms.density_texture_size.x)
         tex_desc3.height = Int(uniforms.density_texture_size.y)
         tex_desc3.usage = [.shaderRead, .shaderWrite]
         self.potentialTexture = device.makeTexture(
             descriptor: tex_desc3
         )
+        potentialTexture.label = "Potential Texture"
+
+        let tex_desc4 = MTLTextureDescriptor()
+        tex_desc4.pixelFormat = .rg32Float
+        tex_desc4.width = Int(uniforms.density_texture_size.x)
+        tex_desc4.height = Int(uniforms.density_texture_size.y)
+        tex_desc4.usage = [.shaderRead, .shaderWrite]
+        self.fourierSpaceTexture = device.makeTexture(
+            descriptor: tex_desc4
+        )
+        fourierSpaceTexture.label = "Fourier Space Texture"
 
         self.updateDensityTexturePipeline = try! device.makeComputePipelineState(
             function: library.makeFunction(name: "update_density_texture")!
@@ -246,6 +275,7 @@ class Simulation: ObservableObject {
         computeEncoder.setBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
         computeEncoder.setBuffer(particlesBuffer, offset: 0, index: 1)
         computeEncoder.setBuffer(cellStartBuffer, offset: 0, index: 2)
+        computeEncoder.setTexture(potentialTexture, index: 0)
 
         computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
@@ -267,39 +297,39 @@ class Simulation: ObservableObject {
         computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
 
-    private func computePotential() {
-//        assert(uniforms.density_texture_size.x == uniforms.density_texture_size.y)
-//
-//        let arrayCount = Int(uniforms.density_texture_size.x) * Int(uniforms.density_texture_size.y)
-//
-//        var density: UnsafeMutablePointer<simd_float1> = .allocate(capacity: arrayCount)
-//        densityTexture.getBytes(&density, bytesPerRow: MemoryLayout<simd_float1>.stride * Int(uniforms.density_texture_size.x), from: MTLRegionMake2D(0, 0, Int(uniforms.density_texture_size.x), Int(uniforms.density_texture_size.y)), mipmapLevel: 0)
-//
-//
-//        var density_imag: UnsafeMutablePointer<simd_float1> = .allocate(capacity: arrayCount)
-//        var density_complex = DSPSplitComplex(realp: density, imagp: density_imag)
-//
-//        var intermediate_real: UnsafeMutablePointer<Float> = .allocate(capacity: arrayCount)
-//        var intermediate_imag: UnsafeMutablePointer<Float> = .allocate(capacity: arrayCount)
-//        var intermediate_complex = DSPSplitComplex(realp: intermediate_real, imagp: intermediate_imag)
-//
-//        let fft2d = vDSP.FFT2D(width: Int(uniforms.density_texture_size.x), height: Int(uniforms.density_texture_size.y), ofType: DSPSplitComplex.self)!
-//
-//        fft2d.transform(input: density_complex, output: &intermediate_complex, direction: .forward)
-//
-        ////        let sample_spacing = 1 / uniforms.density_texture_size.x
-        ////        for i in 0..<arrayCount {
-        ////            let ix = i % Int(uniforms.density_texture_size.x)
-        ////            let iy = i / Int(uniforms.density_texture_size.x)
-        ////
-        ////            let (kx, ky) = (Float(ix), Float(iy))
-        ////        }
-//
-//        // Deallocate buffers
-//        density.deallocate()
-//        density_imag.deallocate()
-//        intermediate_real.deallocate()
-//        intermediate_imag.deallocate()
+    private func computePotential(computeEncoder: MTLComputeCommandEncoder) {
+        var uniforms = DFTUniforms(
+            size: uniforms.density_texture_size,
+            inverse: false
+        )
+
+        let threadsPerThreadgroup = MTLSize(width: 8, height: 8, depth: 1)
+        let threadgroupsPerGrid = MTLSize(
+            width: (Int(uniforms.size.x) + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width,
+            height: (Int(uniforms.size.y) + threadsPerThreadgroup.height - 1) / threadsPerThreadgroup.height,
+            depth: 1
+        )
+
+        computeEncoder.setComputePipelineState(dftPipeline)
+        computeEncoder.setBytes(&uniforms, length: MemoryLayout<DFTUniforms>.stride, index: 0)
+        computeEncoder.setTexture(densityTexture, index: 0)
+        computeEncoder.setTexture(fourierSpaceTexture, index: 1)
+
+        computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+
+        computeEncoder.setComputePipelineState(computeInverseLaplacianPipeline)
+
+        computeEncoder.setBytes(&uniforms, length: MemoryLayout<DFTUniforms>.stride, index: 0)
+        computeEncoder.setTexture(fourierSpaceTexture, index: 0)
+
+        computeEncoder.setComputePipelineState(dftPipeline)
+
+        uniforms.inverse = true
+        computeEncoder.setBytes(&uniforms, length: MemoryLayout<DFTUniforms>.stride, index: 0)
+        computeEncoder.setTexture(fourierSpaceTexture, index: 0)
+        computeEncoder.setTexture(potentialTexture, index: 1)
+
+        computeEncoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
 
     public func update() {
@@ -323,13 +353,13 @@ class Simulation: ObservableObject {
         commandBuffer.waitUntilCompleted()
 
         sortHashes()
-        computePotential()
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let computeEncoder = commandBuffer.makeComputeCommandEncoder()
         else { assertionFailure(); return }
 
         updateDensities(computeEncoder: computeEncoder)
+        computePotential(computeEncoder: computeEncoder)
         updateAccelerationsAndXSPHVelocities(computeEncoder: computeEncoder)
         // second partial verlet step using the new acceleration
         perfromLeapfrogPartialStep(computeEncoder: computeEncoder, onlyKick: true)
@@ -340,12 +370,19 @@ class Simulation: ObservableObject {
     }
 
     private func generateRandomParticlePositions() {
+        let gaussian = GKGaussianDistribution(randomSource: GKMersenneTwisterRandomSource(seed: 31415), mean: 50, deviation: 10)
+
         let particles = particlesBuffer.contents().bindMemory(to: Particle.self, capacity: particleCount)
         for i in 0..<particleCount {
             particles[i].position = simd_float2(
-                Float.random(in: 0.01..<0.99),
-                Float.random(in: 0.6..<0.99)
+                Float(gaussian.nextInt()) / 100.0,
+                Float(gaussian.nextInt()) / 100.0
             )
+            particles[i].position += simd_float2(
+                Float.random(in: -0.01...0.01),
+                Float.random(in: -0.01...0.01)
+            )
+
             particles[i].velocity = simd_float2(
                 0,
                 0

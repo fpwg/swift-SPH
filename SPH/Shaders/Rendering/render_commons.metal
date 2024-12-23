@@ -6,7 +6,7 @@
 //
 
 #include <metal_stdlib>
-#include "definitions.h"
+#include "../definitions.h"
 
 using namespace metal;
 

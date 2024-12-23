@@ -6,7 +6,7 @@
 //
 
 # include <metal_stdlib>
-#include "definitions.h"
+#include "../definitions.h"
 #include "render_commons.h"
 
 #define PARTICLE_SIZE 5
@@ -43,6 +43,8 @@ fragment float4 draw_particles_fragment_shader(const device renderer_uniforms &u
     if (length(point_coord - float2(0.5, 0.5)) > 0.5) {
         discard_fragment();
     }
+    
+    return float4(1);
     
     particle p = in.particle;
     float3 color = compute_fluid_color(u, p.density, p.velocity, p.position);

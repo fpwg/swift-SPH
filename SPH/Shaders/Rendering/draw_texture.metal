@@ -6,7 +6,7 @@
 //
 
 # include <metal_stdlib>
-#include "definitions.h"
+#include "../definitions.h"
 #include "render_commons.h"
 
 using namespace metal;
@@ -42,6 +42,7 @@ fragment float4 draw_texture_fragment_shader(const device renderer_uniforms &u [
     float2 velocity = velocity_tex.sample(sampler, in.tex_coord).rg;
 
     float3 color = compute_fluid_color(u, density, velocity, in.tex_coord);
+    
     
     return float4(color, 1);
 }
