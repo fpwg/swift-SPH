@@ -46,6 +46,7 @@ struct simulation_uniforms {
 struct renderer_uniforms {
     float3 fluidColor;
     float3 draggedFluidColor;
+    float3 velocityHighlightColor;
     
     float2 dragCenter;
     bool isDragging;

@@ -30,7 +30,7 @@ float3 compute_fluid_color(renderer_uniforms u, float density, float2 velocity, 
     color = mix(color, float3(0,1,0), tanh(2*speed - 1)*0.5+0.5);
     
     intensity = clamp(intensity, 0.0, 1.0);
-    intensity = smoothstep(0.05, 0.2, intensity);
+    intensity = smoothstep(0.05, 0.4, intensity);
 
     return color * intensity;
 }

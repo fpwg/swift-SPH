@@ -21,10 +21,10 @@ let squareVertices: [Vertex] = [
     Vertex(position: .init(-1, 1), texCoord: .init(0, 1)),
     Vertex(position: .init(-1, -1), texCoord: .init(0, 0)),
 ]
-
 struct RendererUniforms {
-    var fluid_color: simd_float3 = .init(0.1, 0.6, 0.8)
-    var dragged_fluid_color: simd_float3 = .init(0.1, 0.8, 1)
+    var fluid_color: simd_float3 = .init(5, 117, 237) / 255.0
+    var dragged_fluid_color: simd_float3 = .init(87, 162, 242) / 255.0
+    var velocity_highlight_color: simd_float3 = .init(189, 69, 237) / 255.0
 
     var drag_center: simd_float2 = .init(0.5, 0.5)
     var is_dragging: simd_bool = false
@@ -128,12 +128,12 @@ class SimulationRenderer: NSObject, MTKViewDelegate {
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: squareVertices.count)
 
         // Draw particles on top
-        renderEncoder.setRenderPipelineState(drawParticlesRenderPipelineState)
-        renderEncoder.setVertexBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
-        renderEncoder.setVertexBuffer(particlesBuffer, offset: 0, index: 1)
-        renderEncoder.setFragmentBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
-
-        renderEncoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: simulation.particleCount)
+//        renderEncoder.setRenderPipelineState(drawParticlesRenderPipelineState)
+//        renderEncoder.setVertexBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
+//        renderEncoder.setVertexBuffer(particlesBuffer, offset: 0, index: 1)
+//        renderEncoder.setFragmentBytes(&uniforms, length: MemoryLayout<RendererUniforms>.stride, index: 0)
+//
+//        renderEncoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: simulation.particleCount)
 
         renderEncoder.endEncoding()
         commandBuffer.present(drawable)
