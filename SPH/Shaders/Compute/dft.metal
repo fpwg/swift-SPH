@@ -15,6 +15,8 @@ using namespace metal;
 
 #define M_PI 3.14159265358979323846
 
+// TODO: everything here needs some love
+
 struct DFT_uniforms {
     uint2 size;
     bool inverse;

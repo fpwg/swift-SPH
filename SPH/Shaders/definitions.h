@@ -15,14 +15,16 @@ struct particle {
     float2 acceleration;
 
     float density;
-    uint cellHash;
+    uint hashOfContainingCell;
+    
+    float3 color;
 };
 
 struct simulation_uniforms {
-    float time_step;
-    uint body_count;
-    float wallCollisionDampening;
-    float kernelRadius;
+    float timeStep;
+    uint particleCount;
+    float wallCollisionDampeningFactor;
+    float kernelSupportRadius;
     float2 gravity;
     float stiffness;
     float rho0;

@@ -17,7 +17,8 @@ constant int2 cellOffsets[9] = {
 class NeighbourhoodIterator;
 
 class ParticleHashGrid {
-    int2 hashParams = int2(37, 1297);
+    // two primes for the hash
+    int2 hashParams = int2(100003, 99991);
     float gridCellSize;
     uint maximumHash;
 public:

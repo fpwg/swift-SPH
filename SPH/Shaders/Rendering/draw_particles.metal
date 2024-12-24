@@ -43,8 +43,8 @@ fragment float4 draw_particles_fragment_shader(const device renderer_uniforms &u
     if (length(point_coord - float2(0.5, 0.5)) > 0.5) {
         discard_fragment();
     }
-    
-    return float4(1);
+        
+    return float4(in.particle.color, 1);
     
     particle p = in.particle;
     float3 color = compute_fluid_color(u, p.density, p.velocity, p.position);

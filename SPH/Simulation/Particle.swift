@@ -16,4 +16,6 @@ struct SimulationParticle {
     var density: simd_float1
 
     var cellHash: simd_uint1
+
+    var color: simd_float3
 }

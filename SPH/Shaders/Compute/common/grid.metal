@@ -15,15 +15,15 @@ int2 ParticleHashGrid::getGridPosition(float2 position) {
     return int2(floor(position / this->gridCellSize));
 }
 
-// TODO: work on this implementation
+
 uint ParticleHashGrid::hash(int2 gridPosition) {
     int2 i = gridPosition * this->hashParams;
-    return ((uint) (i.x + i.y)) % this->maximumHash;
-
+    return ((uint) (i.x ^ i.y)) % this->maximumHash;
 }
 
+
 void ParticleHashGrid::updateParticleHash(device particle &p) {
-    p.cellHash = this->hash(getGridPosition(p.position));
+    p.hashOfContainingCell = this->hash(getGridPosition(p.position));
 }
 
 
@@ -61,7 +61,7 @@ void NeighbourhoodIterator::next() {
     if (done) { return; }
     uint nextIndex = currentIndex + 1;
     
-    if (particles[currentIndex].cellHash != particles[nextIndex].cellHash) { // end of cell reached
+    if (particles[currentIndex].hashOfContainingCell != particles[nextIndex].hashOfContainingCell) { // end of cell reached
         
         if (offsetIndex >= 8) { // end of cell offsets reached
             done = true;

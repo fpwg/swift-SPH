@@ -1,4 +1,4 @@
-# Swift SPH
+# Swift SPH [WIP]
 
 Realtime fluid dynamics with smoothed particle hydrodynamics in Swift and Metal,
 partially inspired by [@SebLagues's](https://github.com/SebLague) [Coding Adventure](https://github.com/SebLague/Fluid-Sim)

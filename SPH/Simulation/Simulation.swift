@@ -130,7 +130,7 @@ class Simulation: ObservableObject {
             function: library.makeFunction(name: "update_densities")!
         )
         self.computeHashesPipeline = try! device.makeComputePipelineState(
-            function: library.makeFunction(name: "compute_hashes")!
+            function: library.makeFunction(name: "updateGridHashesForParticles")!
         )
         self.updateAccelerationsAndXSPHVelocitiesPipeline = try! device.makeComputePipelineState(
             function: library.makeFunction(name: "update_accelerations_and_XSPH")!
@@ -359,9 +359,10 @@ class Simulation: ObservableObject {
         else { assertionFailure(); return }
 
         updateDensities(computeEncoder: computeEncoder)
-        computePotential(computeEncoder: computeEncoder)
+        // TODO: reenable once we're doing self gravity again
+        // computePotential(computeEncoder: computeEncoder)
         updateAccelerationsAndXSPHVelocities(computeEncoder: computeEncoder)
-        // second partial verlet step using the new acceleration
+        // second partial leapfrog step using the new acceleration
         perfromLeapfrogPartialStep(computeEncoder: computeEncoder, onlyKick: true)
 
         computeEncoder.endEncoding()
@@ -382,6 +383,7 @@ class Simulation: ObservableObject {
                 Float.random(in: -0.01...0.01),
                 Float.random(in: -0.01...0.01)
             )
+            particles[i].color = simd_float3(repeating: 1)
 
             particles[i].velocity = simd_float2(
                 0,

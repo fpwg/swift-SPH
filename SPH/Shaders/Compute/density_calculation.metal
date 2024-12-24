@@ -16,14 +16,14 @@ float query_density(float2 position,
                     simulation_uniforms u,
                     device particle *particles,
                     device const uint *cell_starts) {
-    auto grid = ParticleHashGrid(u.kernelRadius, u.body_count);
+    auto grid = ParticleHashGrid(u.kernelSupportRadius, u.particleCount);
     float density = 0;
     
     for (auto iterator = grid.getNeighbourhoodIterator(particles, cell_starts, position); iterator.hasNext(); iterator.next()) {
         float dist = length(position - iterator->position);
-        if (dist > u.kernelRadius || isnan(dist)) { continue; }
+        if (dist > u.kernelSupportRadius || isnan(dist)) { continue; }
 
-        float influence = sph_kernel(dist / u.kernelRadius) / float(u.body_count);
+        float influence = sph_kernel(dist / u.kernelSupportRadius) / float(u.particleCount);
         density += influence;
     }
     
@@ -34,14 +34,14 @@ float2 query_velocity(float2 position,
                     simulation_uniforms u,
                     device particle *particles,
                     device const uint *cell_starts) {
-    auto grid = ParticleHashGrid(u.kernelRadius, u.body_count);
+    auto grid = ParticleHashGrid(u.kernelSupportRadius, u.particleCount);
     float2 velocity = 0;
     
     for (auto iterator = grid.getNeighbourhoodIterator(particles, cell_starts, position); iterator.hasNext(); iterator.next()) {
         float dist = length(position - iterator->position);
-        if (dist > u.kernelRadius || isnan(dist)) { continue; }
+        if (dist > u.kernelSupportRadius || isnan(dist)) { continue; }
 
-        float influence = sph_kernel(dist / u.kernelRadius) / float(u.body_count);
+        float influence = sph_kernel(dist / u.kernelSupportRadius) / float(u.particleCount);
         velocity += iterator->velocity * influence / iterator->density;
     }
     
@@ -52,7 +52,7 @@ kernel void update_densities(device const simulation_uniforms &u [[ buffer(0)]],
                              device particle *particles [[ buffer(1) ]],
                              device const uint *cell_starts [[ buffer(2) ]],
                              uint vid [[ thread_position_in_grid ]]) {
-    if (vid >= u.body_count) { return; }
+    if (vid >= u.particleCount) { return; }
     particles[vid].density = query_density(particles[vid].position, u, particles, cell_starts);
 }
 
