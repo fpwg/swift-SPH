@@ -18,7 +18,7 @@ int2 ParticleHashGrid::getGridPosition(float2 position) {
 
 uint ParticleHashGrid::hash(int2 gridPosition) {
     int2 i = gridPosition * this->hashParams;
-    return ((uint) (i.x ^ i.y)) % this->maximumHash + 1;
+    return ((uint) (i.x ^ i.y)) % (this->maximumHash-1) + 1;
 }
 
 
